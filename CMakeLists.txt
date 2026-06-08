@@ -8,7 +8,7 @@ set(chuffed_VERSION_PATCH 2)
 
 ### Additional Definitions:
 option(STATIC "compile with the -static linker flag" OFF)
-option(CP_PROFILER "Build with the CP Profiler Integration" ON)
+option(CP_PROFILER "Build with the CP Profiler Integration" OFF)   # change off
 option(SUPPORT_VAR_IMPACT "Build with support for impact branching" OFF)
 # ------------- Compiler Configuration -------------
 
