@@ -96,8 +96,9 @@ cmake --build build --target format
 
 这个文件后续可以继续补充与 CMake 配置、构建选项和项目定制相关的内容。
 
-## 8. 在最终输出中包含统计信息
+## 8. 求解配置说明
 
+有关求解器搜索配置、变量和值启发式、重启策略等内容，请参阅 `SOLVE-CONFIG.md`。
 已将运行结束时的统计信息（例如总时间、节点数、重启次数、冲突数等）加入到 `fzn-chuffed` 的最终输出中。
 
 - 实现方式：在 `chuffed/flatzinc/fzn-chuffed.cpp` 中，在求解完成后调用 `engine.printStats()`，因此 `fzn-chuffed` 在输出解后会打印以 `%%%%%mzn-stat:` 开头的标准统计行，便于被外部工具解析。
