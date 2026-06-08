@@ -4,7 +4,7 @@
 
 ## 变量选择启发式（VarBranch）
 
-支持的 FlatZinc 变量选择注释：
+支持的 FlatZinc *变量选择注释*：
 
 - `input_order`：按变量在模型中出现的顺序选择
 - `first_fail` / `most_constrained`：选择当前域最小的变量
@@ -52,3 +52,46 @@ solve :: bool_search(bools, random_order, default) satisfy;
 ## 其它求解配置
 
 后续任何与求解配置相关的内容（例如 `--sbps`、`--introduced-heuristic`、重启策略、分支策略、搜索记录等）都将记录到本文件中。
+
+## 内部可用的变量选择枚举
+
+`chuffed/branching/branching.h` 中还定义了一组完整的 `VarBranch` 枚举，包含更多内部变量启发式：
+
+- `VAR_DEFAULT`：自动搜索
+- `VAR_INORDER`：输入顺序
+- `VAR_SIZE_MIN`：最小域（对应 `first_fail`）
+- `VAR_SIZE_MAX`：最大域（对应 `anti_first_fail`）
+- `VAR_MIN_MIN`：最小下界（对应 `smallest`）
+- `VAR_MIN_MAX`：最大下界（对应 `largest_smallest`）
+- `VAR_MAX_MIN`：最小上界（对应 `smallest_largest`）
+- `VAR_MAX_MAX`：最大上界（对应 `largest`）
+- `VAR_DEGREE_MIN`：最小度数
+- `VAR_DEGREE_MAX`：最大度数
+- `VAR_REGRET_MIN_MAX`：最大最小后悔值（对应 `max_regret`）
+- `VAR_REGRET_MAX_MAX`：最大最大后悔值
+- `VAR_REDUCED_COST`：基于 MIP 的最大减少成本
+- `VAR_PSEUDO_COST`：基于 MIP 的最大伪成本
+- `VAR_ACTIVITY`：最大 VSIDS 活动度
+- `VAR_RANDOM`：随机顺序
+- `VAR_IMPACT`：影响度启发式（需要 `SUPPORT_VAR_IMPACT`）
+
+### 说明
+
+目前 FlatZinc 的 `ann2ivarsel` 只将一部分注释映射到这些枚举值，因此并非所有内部枚举值都有对应的 FlatZinc 注释名称。比如 `VAR_DEGREE_MIN`、`VAR_REDUCED_COST`、`VAR_PSEUDO_COST`、`VAR_ACTIVITY` 等并没有在当前代码中直接暴露为 FlatZinc 注释。
+
+## 内部可用的值选择枚举
+
+`chuffed/branching/branching.h` 中的 `ValBranch` 枚举也包含更多内部值选择策略：
+
+- `VAL_DEFAULT`：默认策略
+- `VAL_MIN`：最小值
+- `VAL_MAX`：最大值
+- `VAL_MIDDLE`：中间值
+- `VAL_MEDIAN`：中位数
+- `VAL_SPLIT_MIN`：域左半部分
+- `VAL_SPLIT_MAX`：域右半部分
+- `VAL_RANDOM`：随机值
+
+### 说明
+
+当前 FlatZinc 的 `ann2ivalsel` 只映射了 `VAL_DEFAULT`、`VAL_MIN`、`VAL_MAX`、`VAL_MEDIAN`、`VAL_SPLIT_MIN`、`VAL_SPLIT_MAX`。`VAL_MIDDLE` 和 `VAL_RANDOM` 在源码中被注释掉/标记为暂不支持。
