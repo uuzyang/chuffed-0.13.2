@@ -149,8 +149,12 @@ int main(int argc, char** argv) {
 			engine.setOutputStream(output_buffer);
 			engine.solve(FlatZinc::s, commandLine);
 			std::cout << output_buffer.str();
+			// Print solver statistics (nodes, time, restarts, etc.) to final output
+			engine.printStats();
 		} else {
 			engine.solve(FlatZinc::s, commandLine);
+			// Print solver statistics (nodes, time, restarts, etc.) to final output
+			engine.printStats();
 		}
 
 		if (engine.status == RES_LUN) {
