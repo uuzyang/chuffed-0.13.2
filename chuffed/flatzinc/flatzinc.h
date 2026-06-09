@@ -346,6 +346,8 @@ public:
 	vec<SubTree> adaptive_best_subtrees;
 	vec<int> adaptive_bounds;
 	int adaptive_max_bound = -1;
+	int adaptive_replay_pos;
+	DecInfo* nextAdaptiveReplayDecision();
 	// Definition for variables given uniformly random values on restart
 	// (lower bound, upper bound, variable index)
 	std::vector<std::array<int, 3>> int_uniform;

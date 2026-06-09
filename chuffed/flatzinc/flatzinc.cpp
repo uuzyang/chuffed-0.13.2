@@ -938,6 +938,40 @@ void FlatZincSpace::beforeRestart(Engine* /*e*/) {
 	adaptive_current_subtree = extractAdaptiveSubTree();
 }
 
+DecInfo* FlatZincSpace::nextAdaptiveReplayDecision() {
+	if (!adaptive_restart_enabled) {
+		return nullptr;
+	}
+	if (adaptive_probing) {
+		return nullptr;
+	}
+	if (adaptive_revisit_subtree.isEmpty()) {
+		return nullptr;
+	}
+
+	while (adaptive_replay_pos < adaptive_revisit_subtree.decisions.size()) {
+		const DecInfo& dec = adaptive_revisit_subtree.decisions[adaptive_replay_pos];
+		adaptive_replay_pos++;
+
+		if (dec.var == nullptr) {
+			continue;
+		}
+
+		IntVar* var = static_cast<IntVar*>(dec.var);
+
+		if (var->isFixed()) {
+			continue;
+		}
+		if (!var->indomain(dec.val)) {
+			continue;
+		}
+
+		return new DecInfo(dec);
+	}
+
+	return nullptr;
+}
+
 bool FlatZincSpace::onRestart(Engine* e) {
 	if (!enable_on_restart && !adaptive_restart_enabled) {
 		return false;
