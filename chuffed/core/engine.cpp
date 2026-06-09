@@ -973,7 +973,10 @@ RESULT Engine::search(const std::string& problemLabel) {
 					break;
 				}
 			}
-
+			// If we're out of assumptions, or the next assumption is not yet decided, then we ask the branching heuristic for a decision.
+			if (di == nullptr && fzn != nullptr && fzn->adaptive_restart_enabled) {
+				di = fzn->nextAdaptiveReplayDecision();
+			}
 			if (di == nullptr) {
 				di = branching->branch();
 			}
