@@ -869,51 +869,51 @@ void FlatZincSpace::removeAdaptiveSubTree(int index) {
 
 
 int FlatZincSpace::recommendAdaptiveSubTree() {
-    // 没有候选子树，返回 -1 更安全
-    if (adaptive_best_subtrees.size() == 0) {
-        return -1;
-    }
+	// 没有候选子树，返回 -1 更安全
+	if (adaptive_best_subtrees.size() == 0) {
+		return -1;
+	}
 
-    // bounds 不合法，返回 0
-    if (adaptive_max_bound <= 0 ||
-        adaptive_bounds.size() < adaptive_top_k + 1) {
-        return 0;
-    }
+	// bounds 不合法，返回 0
+	if (adaptive_max_bound <= 0 ||
+			adaptive_bounds.size() < adaptive_top_k + 1) {
+		return 0;
+	}
 
-    // 随机生成 [0, adaptive_max_bound - 1]
-    std::uniform_int_distribution<int> dist(0, adaptive_max_bound - 1);
-    int v = dist(adaptive_rnd);
+	// 随机生成 [0, adaptive_max_bound - 1]
+	std::uniform_int_distribution<int> dist(0, adaptive_max_bound - 1);
+	int v = dist(adaptive_rnd);
 
-    // 只遍历当前真实存在的 subtree 数量
-    int n = adaptive_best_subtrees.size();
+	// 只遍历当前真实存在的 subtree 数量
+	int n = adaptive_best_subtrees.size();
 
-    for (int i = 0; i < n; i++) {
-        if (v >= adaptive_bounds[i] && v < adaptive_bounds[i + 1]) {
-            return i;
-        }
-    }
+	for (int i = 0; i < n; i++) {
+		if (v >= adaptive_bounds[i] && v < adaptive_bounds[i + 1]) {
+			return i;
+		}
+	}
 
-    return 0;
+	return 0;
 }
 
 void FlatZincSpace::generateAdaptiveBounds() {
-    adaptive_bounds.growTo(adaptive_top_k + 1);
+	adaptive_bounds.growTo(adaptive_top_k + 1);
 
-    std::vector<int> list(adaptive_top_k);
+	std::vector<int> list(adaptive_top_k);
 
-    int sum = 100;
-    for (int i = 0; i < adaptive_top_k; i++) {
-        list[i] = sum;
-        sum = static_cast<int>(sum * adaptive_bound_rate);
-    }
+	int sum = 100;
+	for (int i = 0; i < adaptive_top_k; i++) {
+		list[i] = sum;
+		sum = static_cast<int>(sum * adaptive_bound_rate);
+	}
 
-    adaptive_bounds[0] = 0;
+	adaptive_bounds[0] = 0;
 
-    for (int i = 1; i <= adaptive_top_k; i++) {
-        adaptive_bounds[i] = adaptive_bounds[i - 1] + list[adaptive_top_k - i];
-    }
+	for (int i = 1; i <= adaptive_top_k; i++) {
+		adaptive_bounds[i] = adaptive_bounds[i - 1] + list[adaptive_top_k - i];
+	}
 
-    adaptive_max_bound = adaptive_bounds[adaptive_top_k];
+	adaptive_max_bound = adaptive_bounds[adaptive_top_k];
 }
 
 
