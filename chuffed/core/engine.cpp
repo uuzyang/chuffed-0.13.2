@@ -539,8 +539,8 @@ unsigned int Engine::getRestartLimit(unsigned int i) {
 			return so.restart_scale;
 		}
 		engine.adaptive_current_probe_num = 0;
-		engine.adaptive_geom_restarts++;
 		return so.restart_scale * ((int)pow(so.restart_base, engine.adaptive_geom_restarts));
+		engine.adaptive_geom_restarts++;
 	}
 
 	switch (so.restart_type) {
