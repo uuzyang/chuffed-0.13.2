@@ -1009,18 +1009,6 @@ bool FlatZincSpace::onRestart(Engine* e) {
 			adaptive_revisit_index = 0;
 			adaptive_probing = true;
 		}
-		if (!adaptive_probing && !adaptive_revisit_subtree.isEmpty()) {
-			for (int i = 0; i < adaptive_revisit_subtree.decisions.size(); i++) {
-				const DecInfo& dec = adaptive_revisit_subtree.decisions[i];
-				if (dec.var == nullptr) {
-					continue;
-				}
-				IntVar* var = static_cast<IntVar*>(dec.var);
-				if (var->indomain(dec.val)) {
-					assume_int_val(var, dec.val);
-				}
-			}
-		}
 	}
 
 	// Set variables to last captured assignments
