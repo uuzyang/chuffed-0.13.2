@@ -339,6 +339,7 @@ inline bool Engine::constrain() {
 	auto* fzn = dynamic_cast<FlatZinc::FlatZincSpace*>(problem);
 	if (fzn != nullptr) {
 		fzn->storeSolution();
+		fzn->beforeRestart(this);
 	}
 
 	sat.btToLevel(0);
@@ -881,6 +882,9 @@ RESULT Engine::search(const std::string& problemLabel) {
 				if (so.verbosity >= 2) {
 					std::cerr << "restarting and switching to VSIDS\n";
 				}
+				if (fzn != nullptr) {
+					fzn->beforeRestart(this);
+				}
 				sat.btToLevel(0);
 				restart_count++;
 				nodepath.resize(0);
@@ -956,6 +960,9 @@ RESULT Engine::search(const std::string& problemLabel) {
 				} else if (sat.value(toLit(p)) == l_False) {
 					if (fzn != nullptr && fzn->enable_on_restart) {
 						if (!fzn->solution_found || decisionLevel() != 0) {
+							if (fzn != nullptr) {
+								fzn->beforeRestart(this);
+							}
 							sat.btToLevel(0);
 							restart_count++;
 							nodepath.resize(0);
