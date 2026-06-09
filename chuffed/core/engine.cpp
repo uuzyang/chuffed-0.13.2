@@ -533,6 +533,16 @@ void Engine::blockCurrentSol() {
 }
 
 unsigned int Engine::getRestartLimit(unsigned int i) {
+	if (engine.adaptive_restart_enabled) {
+		if (engine.adaptive_current_probe_num < engine.adaptive_probe_limit) {
+			engine.adaptive_current_probe_num++;
+			return so.restart_scale;
+		}
+		engine.adaptive_current_probe_num = 0;
+		engine.adaptive_geom_restarts++;
+		return so.restart_scale * ((int)pow(so.restart_base, engine.adaptive_geom_restarts));
+	}
+
 	switch (so.restart_type) {
 		case NONE:
 			if (i > 1) {
@@ -898,6 +908,9 @@ RESULT Engine::search(const std::string& problemLabel) {
 				}
 				starts++;
 				nof_conflicts += getRestartLimit(starts);
+				if (fzn != nullptr) {
+					fzn->beforeRestart(this);
+				}
 				sat.btToLevel(0);
 				restart_count++;
 				nodepath.resize(0);

@@ -95,3 +95,42 @@ solve :: bool_search(bools, random_order, default) satisfy;
 ### 说明
 
 当前 FlatZinc 的 `ann2ivalsel` 只映射了 `VAL_DEFAULT`、`VAL_MIN`、`VAL_MAX`、`VAL_MEDIAN`、`VAL_SPLIT_MIN`、`VAL_SPLIT_MAX`。`VAL_MIDDLE` 和 `VAL_RANDOM` 在源码中被注释掉/标记为暂不支持。
+
+## 决策信息结构（DecInfo）
+
+### DecInfo 的结构
+
+DecInfo 类在 `chuffed/branching/branching.h` 中定义，用于记录搜索过程中的单个分支决策：
+
+```cpp
+class DecInfo {
+public:
+    void* var;      // 被分支的变量指针（可能为 nullptr 表示 SAT 变量）
+    int val;        // 决策涉及的值
+    int type;       // 决策类型（-1、1、2、3 等）
+    
+    DecInfo(void* _var, int _val, int _type = -1) 
+        : var(_var), val(_val), type(_type) {}
+};
+```
+
+`engine.dec_info` 是一个 DecInfo 的向量，存储了整个搜索过程中做过的**决策历史**。
+
+### type 字段的含义
+
+`type` 字段表示分支的**方向**，从决策创建时的具体值可以识别出不同类型的分支：
+
+| type 值 | 含义 | 对应情景 | 特点 |
+|--------|------|--------|------|
+| **1** | 下分支（主要分支方向） | `x = val`、`x >= val`、取中位数 | 标准方向，大多数决策 |
+| **2** | 上分支方向 | `x > val`、域上半部分分割 | 备用分支方向1 |
+| **3** | 另一分支方向 | `x < val`、域下半部分分割 | 备用分支方向2 |
+| **-1** | 默认/未指定 | SAT 变量决策 | 通常用于 SAT 层决策 |
+
+
+### 相关代码位置
+
+- DecInfo 定义：`chuffed/branching/branching.h` 第 50-57 行
+- 决策创建：`chuffed/vars/int-var.cpp` 的 `IntVar::branch()` 方法
+- 决策应用：`chuffed/core/engine.cpp` 的 `Engine::branch()` 方法
+

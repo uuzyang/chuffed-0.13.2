@@ -38,6 +38,7 @@
 #include <tuple>
 #include <unordered_map>
 #include <utility>
+#include <random>
 #include <vector>
 
 extern std::map<IntVar*, std::string> intVarString;
@@ -319,6 +320,32 @@ public:
 	bool solution_found = false;
 	// Whether a solution was found since the last restart
 	bool new_solution = false;
+
+	struct SubTree {
+		vec<DecInfo> decisions;
+		double score{0.0};
+
+		SubTree() = default;
+		SubTree(const vec<DecInfo>& _decisions, double _score) : decisions(_decisions), score(_score) {}
+		bool isEmpty() const { return decisions.size() == 0; }
+	};
+
+	// Adaptive restart state for the Choco-style probing + revisit logic
+	bool adaptive_restart_enabled = false;
+	bool adaptive_probing = true;
+	int adaptive_seed = 0;
+	int adaptive_top_k = 5;
+	int adaptive_probe_limit = 100;
+	double adaptive_bound_rate = 1.5;
+	double adaptive_subtree_roulette = 1.5;
+	int adaptive_revisit_index = -1;
+	int adaptive_score_type = 0;
+	std::mt19937 adaptive_rnd;
+	SubTree adaptive_current_subtree;
+	SubTree adaptive_revisit_subtree;
+	vec<SubTree> adaptive_best_subtrees;
+	vec<int> adaptive_bounds;
+	int adaptive_max_bound = -1;
 	// Definition for variables given uniformly random values on restart
 	// (lower bound, upper bound, variable index)
 	std::vector<std::array<int, 3>> int_uniform;
@@ -340,8 +367,20 @@ public:
 	// Method called before the search process is restarted
 	// Returns false when the search should be marked as complete
 	bool onRestart(Engine* e);
+	// Method called before the search process is restarted, but while the current decision path is still available
+	void beforeRestart(Engine* e);
 	// Whether onRestart() should be called
 	bool enable_on_restart = false;
+
+	// Adaptive restart helpers
+	void initAdaptiveRestart();
+	double calculateAdaptiveScore(const vec<DecInfo>& path) const;
+	SubTree extractAdaptiveSubTree() const;
+	int insertAdaptiveSubTree(double score, bool isRevisit);
+	void removeAdaptiveSubTree(int index);
+	int recommendAdaptiveSubTree();
+	void generateAdaptiveBounds();
+	void resetAdaptiveRestart();
 
 	// === End `on_restart` ===
 

@@ -240,7 +240,39 @@ void printLongHelp(int& argc, char**& argv, const std::string& fileExt) {
 				 "     (default "
 			<< def.switch_to_vsids_after
 			<< ").\n"
-				 "  --branch-random [on|off], --no-branch-random\n"
+				 "  --var-heuristic <name>\n"
+				 "     Force a variable heuristic from CLI (activity, input_order, first_fail, random, ...)\n"
+				 "     (default " << def.var_heuristic << ").\n"
+				 "  --val-heuristic <name>\n"
+				 "     Force a value heuristic from CLI (min, max, default, median, split_min, ...)\n"
+				 "     (default " << def.val_heuristic << ").\n"
+				 "  --adaptive-restart [on|off], --no-adaptive-restart\n"
+			 "     Enable adaptive restart with probing and subtree revisit.\n"
+			 "     Uses activity-based variable selection and min-value value selection.\n"
+			 "     (default "
+		<< (def.adaptive_restart ? "on" : "off")
+		<< ").\n"
+			 "  --adaptive-restart-top-k <n>\n"
+			 "     Keep top K subtree candidates for revisit (default "
+		<< def.adaptive_restart_top_k
+		<< ").\n"
+			 "  --adaptive-restart-probe-limit <n>\n"
+			 "     Number of probing restarts before revisit (default "
+		<< def.adaptive_restart_probe_limit
+		<< ").\n"
+			 "  --adaptive-restart-bound-rate <n>\n"
+			 "     Growth rate for adaptive revisit selection bounds (default "
+		<< def.adaptive_restart_bound_rate
+		<< ").\n"
+			 "  --adaptive-restart-seed <n>\n"
+			 "     Seed for adaptive restart random selection (default "
+		<< def.adaptive_restart_seed
+		<< ").\n"
+			 "  --adaptive-roulette <n>\n"
+			 "     Roulette power used when selecting subtrees (default "
+		<< def.adaptive_subtree_roulette
+		<< ").\n"
+			 "  --branch-random [on|off], --no-branch-random\n"
 				 "     Use random variable selection for tie breaking instead of input order (default "
 			<< (def.branch_random ? "on" : "off")
 			<< ").\n"
@@ -501,6 +533,22 @@ void parseOptions(int& argc, char**& argv, std::string* fileArg, const std::stri
 			so.branch_random = boolBuffer;
 		} else if (cop.get("--switch-to-vsids-after", &intBuffer)) {
 			so.switch_to_vsids_after = intBuffer;
+		} else if (cop.getBool("--adaptive-restart", boolBuffer)) {
+			so.adaptive_restart = boolBuffer;
+		} else if (cop.get("--var-heuristic", &stringBuffer)) {
+			so.var_heuristic = stringBuffer;
+		} else if (cop.get("--val-heuristic", &stringBuffer)) {
+			so.val_heuristic = stringBuffer;
+		} else if (cop.get("--adaptive-restart-top-k", &intBuffer)) {
+			so.adaptive_restart_top_k = intBuffer;
+		} else if (cop.get("--adaptive-restart-probe-limit", &intBuffer)) {
+			so.adaptive_restart_probe_limit = intBuffer;
+		} else if (cop.get("--adaptive-restart-seed", &intBuffer)) {
+			so.adaptive_restart_seed = intBuffer;
+		} else if (cop.get("--adaptive-restart-bound-rate", &stringBuffer)) {
+			so.adaptive_restart_bound_rate = stod(stringBuffer);
+		} else if (cop.get("--adaptive-roulette", &stringBuffer)) {
+			so.adaptive_subtree_roulette = stod(stringBuffer);
 		} else if (cop.get("--sat-polarity", &intBuffer)) {
 			so.sat_polarity = intBuffer;
 		} else if (cop.getBool("--sbps", boolBuffer)) {
@@ -645,7 +693,7 @@ void parseOptions(int& argc, char**& argv, std::string* fileArg, const std::stri
 	if (so.mip_branch) {
 		rassert(so.mip);
 	}
-	if (so.vsids) {
+	if (so.vsids && !so.adaptive_restart) {
 		engine.branching->add(&sat);
 	}
 

@@ -62,6 +62,12 @@ public:
 	// Decision stack
 	vec<DecInfo> dec_info;
 
+	// Adaptive restart state
+	bool adaptive_restart_enabled{false};
+	int adaptive_current_probe_num{0};
+	int adaptive_probe_limit{0};
+	int adaptive_geom_restarts{0};
+
 	// Trails
 	vec<TrailElem> trail;  // Raw data changes
 	vec<int> trail_lim;

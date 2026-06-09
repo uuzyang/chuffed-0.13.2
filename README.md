@@ -41,6 +41,91 @@ integration code, use the following command in the repository root.
 git subtree pull --prefix thirdparty/cp-profiler-integration https://github.com/MiniZinc/cpp-integration.git master --squash
 ```
 
+### Command-Line Options
+
+Chuffed supports various CLI parameters to control search strategy, restart behavior, and heuristics. Key options include:
+
+#### Search & Heuristic Options
+- `--var-heuristic <name>`: Select variable selection heuristic. Supported values:
+  - `activity` or `vsids`: Activity-based (default)
+  - `input_order`: Choose variables in input order
+  - `first_fail`: Choose variable with smallest domain
+  - `random`: Random variable selection
+  - `occurrence`: Choose most frequently used variable
+  - And others: `anti_first_fail`, `smallest`, `largest`, `most_constrained`, `max_regret`
+
+- `--val-heuristic <name>`: Select value assignment heuristic. Supported values:
+  - `min`: Choose minimum value (default)
+  - `max`: Choose maximum value
+  - `default`: Use default behavior
+  - `median`: Choose median value
+  - `split_min`, `split_max`: Bisection-based value selection
+
+#### Restart Strategy Options
+- `--restart <type>`: Set restart strategy (`chuffed_default`, `none`, `constant`, `linear`, `luby`, `geometric`)
+- `--restart-scale <n>`: Conflict count before restart (default: 1000000000)
+- `--restart-base <n>`: Base for geometric restart sequence (default: 1.5)
+- `--toggle-vsids [on|off]`: Alternate between search annotation and VSIDS during restarts
+- `--switch-to-vsids-after <n>`: Switch to VSIDS after N conflicts
+
+#### Adaptive Restart Options
+- `--adaptive-restart [on|off]`: Enable Choco-style adaptive restart with probing and subtree revisit
+- `--adaptive-restart-top-k <n>`: Keep top K subtree candidates for revisit (default: 5)
+- `--adaptive-restart-probe-limit <n>`: Number of probing restarts before revisit phase (default: 3)
+- `--adaptive-restart-bound-rate <n>`: Growth rate for revisit selection bounds (default: 1.5)
+- `--adaptive-restart-seed <n>`: Random seed for adaptive restart (default: 0)
+- `--adaptive-roulette <n>`: Roulette power for weighted subtree selection (default: 1.0)
+  - When `1.0`: proportional selection by bound span
+  - When `> 1.0`: favor candidates with larger bounds more heavily
+  - When `< 1.0`: flatten the distribution
+
+#### Example Usage
+```bash
+# Standard search with activity-based heuristics and geometric restarts
+fzn-chuffed --var-heuristic activity --val-heuristic min --restart geometric model.fzn
+
+# Adaptive restart with custom parameters
+fzn-chuffed --adaptive-restart on --var-heuristic activity --adaptive-restart-top-k 10 \
+  --adaptive-restart-probe-limit 5 --adaptive-roulette 1.5 model.fzn
+
+# Luby restart with random value selection
+fzn-chuffed --restart luby --val-heuristic random model.fzn
+```
+
+### Adaptive Restart Implementation
+
+Chuffed implements a Choco-inspired adaptive restart mechanism that combines probing and subtree revisit strategies:
+
+#### High-Level Algorithm
+1. **Probing Phase**: Perform a fixed number of restarts (`adaptive_restart_probe_limit`) while collecting decision subtrees.
+   - At each restart, extract the current decision path and compute a "score" based on variable domain sizes.
+   - Keep the top-K highest-scoring subtrees in a candidate pool.
+
+2. **Revisit Phase**: After probing completes, switch to revisiting promising subtrees.
+   - Select one of the K candidate subtrees using a weighted roulette selection.
+   - Continue with normal search from that subtree, allowing exploration of alternative branches.
+
+3. **Subtree Scoring**: The score of a subtree is computed as the count of variables with remaining alternatives (domain size > 1) after the decisions are made.
+   - Higher score = more freedom to explore, indicating a potentially better branching point.
+
+4. **Weighted Roulette Selection**: Subtrees are selected probabilistically:
+   - Each candidate is assigned a weight based on the geometric series used to define selection bounds.
+   - The weight is raised to the power of `adaptive_subtree_roulette` to adjust selection bias:
+     - `1.0`: uniform weighting by bound span (recommended)
+     - `> 1.0`: prefer larger-span (more promising) candidates more strongly
+     - `< 1.0`: flatten the distribution toward uniform random selection
+
+#### Integration with Restart Strategy
+- The adaptive restart layer works **independently** of the restart type (`--restart`), though geometric restarts are recommended for better performance.
+- After each restart, `engine.adaptive_restart_enabled`, `engine.adaptive_current_probe_num`, and `engine.adaptive_probe_limit` control the probe/revisit transition.
+- The FlatZinc layer invokes `beforeRestart()` hook before resetting to root to capture the current subtree, and `onRestart()` after to set assumptions based on the selected revisit subtree.
+
+#### Parameters & Tuning
+- **`--adaptive-restart-top-k`**: Larger values keep more candidates (more diversification, higher memory).
+- **`--adaptive-restart-probe-limit`**: Number of restarts to probe (more probes = better information, longer setup).
+- **`--adaptive-restart-bound-rate`**: Controls the geometric series for selection bounds (higher = more bias toward top candidates).
+- **`--adaptive-roulette`**: Fine-tunes the selection bias (see above).
+
 ## Compilation
 
 Chuffed can be compiled on Windows, macOS and Linux.

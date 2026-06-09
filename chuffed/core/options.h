@@ -58,6 +58,16 @@ public:
 	bool finesse{true};  // Get better explanations sometimes
 	bool learn{true};    // Learn clauses
 	bool vsids{false};   // Use VSIDS as branching heuristic
+	// Variable/value heuristics selectable from CLI (defaults chosen to match previous behaviour)
+	std::string var_heuristic{"activity"}; // e.g. activity, input_order, first_fail, random, ...
+	std::string val_heuristic{"min"};      // e.g. min, max, default, median, split_min, split_max
+
+	bool adaptive_restart{false};  // Enable adaptive restart with probing and subtree revisit
+	int adaptive_restart_top_k{5};  // Number of top subtrees to keep for revisit
+	int adaptive_restart_probe_limit{3};  // Number of probing restarts before revisit
+	double adaptive_restart_bound_rate{1.5};  // Rate to grow revisit bounds
+	int adaptive_restart_seed{0};  // Random seed for adaptive restart selection
+	double adaptive_subtree_roulette{1.0}; // Roulette power for subtree selection (1.0 = proportional)
 #if PHASE_SAVING
 	int phase_saving{0};  // Repeat same variable polarity (0=no, 1=recent, 2=always)
 #endif

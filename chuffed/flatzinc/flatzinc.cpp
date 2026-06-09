@@ -134,6 +134,38 @@ ValBranch ann2ivalsel(AST::Node* ann) {
 	return VAL_DEFAULT;
 }
 
+// Map a plain string (from CLI) to a VarBranch
+static VarBranch stringToVarBranch(const std::string& s) {
+	if (s == "activity" || s == "vsids") return VAR_ACTIVITY;
+	if (s == "input_order") return VAR_INORDER;
+	if (s == "first_fail") return VAR_SIZE_MIN;
+	if (s == "anti_first_fail") return VAR_SIZE_MAX;
+	if (s == "smallest") return VAR_MIN_MIN;
+	if (s == "smallest_largest") return VAR_MAX_MIN;
+	if (s == "largest") return VAR_MAX_MAX;
+	if (s == "largest_smallest") return VAR_MIN_MAX;
+	if (s == "occurrence") return VAR_DEGREE_MAX;
+	if (s == "most_constrained") return VAR_SIZE_MIN;
+	if (s == "max_regret") return VAR_REGRET_MIN_MAX;
+	if (s == "random" || s == "random_order") return VAR_RANDOM;
+#ifdef HAS_VAR_IMPACT
+	if (s == "impact") return VAR_IMPACT;
+#endif
+	return VAR_INORDER;
+}
+
+// Map a plain string (from CLI) to a ValBranch
+static ValBranch stringToValBranch(const std::string& s) {
+	if (s == "default") return VAL_DEFAULT;
+	if (s == "min" || s == "indomain") return VAL_MIN;
+	if (s == "max") return VAL_MAX;
+	if (s == "median") return VAL_MEDIAN;
+	if (s == "split_min" || s == "indomain_split") return VAL_SPLIT_MIN;
+	if (s == "split_max" || s == "indomain_reverse_split") return VAL_SPLIT_MAX;
+	// fallback
+	return VAL_DEFAULT;
+}
+
 FlatZincSpace::FlatZincSpace(int intVars, int boolVars, int /*setVars*/)
 		: iv(intVars), iv_introduced(intVars), bv(boolVars), bv_introduced(boolVars) {
 	s = this;
@@ -479,7 +511,25 @@ void FlatZincSpace::parseSolveAnn(AST::Array* ann) {
 	}
 	// Check whether a search was specified
 	if (nbNonEmptySearchAnnotations == 0) {
-		if (!so.vsids) {
+		if (so.adaptive_restart) {
+			vec<Branching*> va;
+			for (int i = 0; i < intVarCount; i++) {
+				if (!iv[i]->isFixed()) {
+					va.push(iv[i]);
+				}
+			}
+			if (va.size() > 0) {
+				// Use CLI-selected heuristics when available
+				VarBranch vsel = stringToVarBranch(so.var_heuristic);
+				ValBranch vsal = stringToValBranch(so.val_heuristic);
+				engine.branching->add(createBranch(va, vsel, vsal));
+				initAdaptiveRestart();
+			} else {
+				engine.branching->add(&sat);
+			}
+		} else if (so.vsids) {
+			engine.branching->add(&sat);
+		} else {
 			so.vsids = true;
 			engine.branching->add(&sat);
 		}
@@ -713,8 +763,183 @@ void FlatZincSpace::storeSolution() {
 	new_solution = true;
 }
 
+void FlatZincSpace::initAdaptiveRestart() {
+	adaptive_restart_enabled = true;
+	adaptive_probing = true;
+	adaptive_revisit_index = -1;
+	adaptive_best_subtrees.clear();
+	adaptive_bounds.clear();
+	adaptive_max_bound = -1;
+	adaptive_seed = so.adaptive_restart_seed;
+	adaptive_top_k = so.adaptive_restart_top_k;
+	adaptive_probe_limit = so.adaptive_restart_probe_limit;
+	adaptive_bound_rate = so.adaptive_restart_bound_rate;
+	adaptive_subtree_roulette = so.adaptive_subtree_roulette;
+	adaptive_rnd.seed(adaptive_seed);
+	generateAdaptiveBounds();
+	engine.adaptive_restart_enabled = true;
+	engine.adaptive_current_probe_num = 0;
+	engine.adaptive_geom_restarts = 0;
+	engine.adaptive_probe_limit = adaptive_probe_limit;
+}
+
+double FlatZincSpace::calculateAdaptiveScore(const vec<DecInfo>& path) const {
+	double posNum = 0;
+	double negNum = 0;
+	double negSum = 0;
+
+	for (int i = 0; i < path.size(); i++) {
+		const DecInfo& dec = path[i];
+		if (dec.var == nullptr) {
+			continue;
+		}
+		IntVar* var = static_cast<IntVar*>(dec.var);
+		bool hasNext = false;
+		if (dec.type == 1) {
+			int val = dec.val;
+			if (var->indomain(val)) {
+				int next = var->nextDomVal(val);
+				hasNext = (next <= var->getMax());
+			}
+		} else {
+			hasNext = true;
+		}
+		if (hasNext) {
+			posNum++;
+		} else {
+			negNum += 1;
+			negSum += posNum;
+		}
+	}
+	return posNum;
+}
+
+FlatZincSpace::SubTree FlatZincSpace::extractAdaptiveSubTree() const {
+	vec<DecInfo> decisions;
+	for (int i = 0; i < engine.dec_info.size(); i++) {
+		const DecInfo& dec = engine.dec_info[i];
+		if (dec.var == nullptr) {
+			continue;
+		}
+		decisions.push(dec);
+	}
+	double score = calculateAdaptiveScore(decisions);
+	return SubTree(decisions, score);
+}
+
+int FlatZincSpace::insertAdaptiveSubTree(double score, bool isRevisit) {
+	if (adaptive_best_subtrees.size() == 0) {
+		adaptive_best_subtrees.push(extractAdaptiveSubTree());
+		return 0;
+	}
+
+	for (int i = 0; i < adaptive_best_subtrees.size(); i++) {
+		const SubTree& st = adaptive_best_subtrees[i];
+		if (score > st.score || (isRevisit && score == st.score)) {
+			if (adaptive_best_subtrees.size() < adaptive_top_k) {
+				adaptive_best_subtrees.push(SubTree());
+			}
+			int insertPos = adaptive_best_subtrees.size() - 1;
+			for (int j = insertPos; j > i; j--) {
+				adaptive_best_subtrees[j] = adaptive_best_subtrees[j - 1];
+			}
+			adaptive_best_subtrees[i] = extractAdaptiveSubTree();
+			if (adaptive_best_subtrees.size() > adaptive_top_k) {
+				adaptive_best_subtrees.pop();
+			}
+			return i;
+		}
+	}
+
+	if (isRevisit) {
+		if (adaptive_best_subtrees.size() < adaptive_top_k) {
+			adaptive_best_subtrees.push(extractAdaptiveSubTree());
+			return adaptive_best_subtrees.size() - 1;
+		}
+	}
+	return -1;
+}
+
+void FlatZincSpace::removeAdaptiveSubTree(int index) {
+	for (int i = index; i < adaptive_best_subtrees.size() - 1; i++) {
+		adaptive_best_subtrees[i] = adaptive_best_subtrees[i + 1];
+	}
+	adaptive_best_subtrees.pop();
+}
+
+
+int FlatZincSpace::recommendAdaptiveSubTree() {
+    // 没有候选子树，返回 -1 更安全
+    if (adaptive_best_subtrees.size() == 0) {
+        return -1;
+    }
+
+    // bounds 不合法，返回 0
+    if (adaptive_max_bound <= 0 ||
+        adaptive_bounds.size() < adaptive_top_k + 1) {
+        return 0;
+    }
+
+    // 随机生成 [0, adaptive_max_bound - 1]
+    std::uniform_int_distribution<int> dist(0, adaptive_max_bound - 1);
+    int v = dist(adaptive_rnd);
+
+    // 只遍历当前真实存在的 subtree 数量
+    int n = adaptive_best_subtrees.size();
+
+    for (int i = 0; i < n; i++) {
+        if (v >= adaptive_bounds[i] && v < adaptive_bounds[i + 1]) {
+            return i;
+        }
+    }
+
+    return 0;
+}
+
+void FlatZincSpace::generateAdaptiveBounds() {
+    adaptive_bounds.growTo(adaptive_top_k + 1);
+
+    std::vector<int> list(adaptive_top_k);
+
+    int sum = 100;
+    for (int i = 0; i < adaptive_top_k; i++) {
+        list[i] = sum;
+        sum = static_cast<int>(sum * adaptive_bound_rate);
+    }
+
+    adaptive_bounds[0] = 0;
+
+    for (int i = 1; i <= adaptive_top_k; i++) {
+        adaptive_bounds[i] = adaptive_bounds[i - 1] + list[adaptive_top_k - i];
+    }
+
+    adaptive_max_bound = adaptive_bounds[adaptive_top_k];
+}
+
+
+void FlatZincSpace::resetAdaptiveRestart() {
+	adaptive_current_subtree = SubTree();
+	adaptive_revisit_subtree = SubTree();
+	adaptive_probing = true;
+	adaptive_best_subtrees.clear();
+	adaptive_revisit_index = -1;
+	adaptive_bounds.clear();
+	adaptive_max_bound = -1;
+	adaptive_rnd.seed(adaptive_seed);
+	generateAdaptiveBounds();
+	engine.adaptive_current_probe_num = 0;
+	engine.adaptive_geom_restarts = 0;
+}
+
+void FlatZincSpace::beforeRestart(Engine* /*e*/) {
+	if (!adaptive_restart_enabled) {
+		return;
+	}
+	adaptive_current_subtree = extractAdaptiveSubTree();
+}
+
 bool FlatZincSpace::onRestart(Engine* e) {
-	if (!enable_on_restart) {
+	if (!enable_on_restart && !adaptive_restart_enabled) {
 		return false;
 	}
 	if (mark_complete) {
@@ -755,6 +980,46 @@ bool FlatZincSpace::onRestart(Engine* e) {
 			assume_int_val(iv[restart_status], 1);  // START
 		} else {
 			assume_int_val(iv[restart_status], 2);  // UNKNOWN
+		}
+	}
+
+	if (adaptive_restart_enabled) {
+		double currentDPscore = adaptive_current_subtree.score;
+		if (adaptive_probing) {
+			double lastScore = -1;
+			if (adaptive_best_subtrees.size() > 0) {
+				lastScore = adaptive_best_subtrees.last().score;
+			}
+			if (currentDPscore > lastScore) {
+				insertAdaptiveSubTree(currentDPscore, false);
+			}
+			if (engine.adaptive_current_probe_num == 0) {
+				adaptive_probing = false;
+				adaptive_revisit_index = 0;
+				if (adaptive_best_subtrees.size() == adaptive_top_k) {
+					adaptive_revisit_index = recommendAdaptiveSubTree();
+				}
+				if (adaptive_revisit_index >= 0 && adaptive_revisit_index < adaptive_best_subtrees.size()) {
+					adaptive_revisit_subtree = adaptive_best_subtrees[adaptive_revisit_index];
+					removeAdaptiveSubTree(adaptive_revisit_index);
+				}
+			}
+		} else {
+			insertAdaptiveSubTree(currentDPscore, true);
+			adaptive_revisit_index = 0;
+			adaptive_probing = true;
+		}
+		if (!adaptive_probing && !adaptive_revisit_subtree.isEmpty()) {
+			for (int i = 0; i < adaptive_revisit_subtree.decisions.size(); i++) {
+				const DecInfo& dec = adaptive_revisit_subtree.decisions[i];
+				if (dec.var == nullptr) {
+					continue;
+				}
+				IntVar* var = static_cast<IntVar*>(dec.var);
+				if (var->indomain(dec.val)) {
+					assume_int_val(var, dec.val);
+				}
+			}
 		}
 	}
 
