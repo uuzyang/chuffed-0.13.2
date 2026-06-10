@@ -344,7 +344,10 @@ void FlatZincSpace::parseSolveAnnIntSearch(AST::Node* elemAnn, BranchGroup* bran
 			}
 			va.push(v);
 		}
-		branching->add(createBranch(va, ann2ivarsel(args->a[1]), ann2ivalsel(args->a[2])));
+		VarBranch vsel = stringToVarBranch(so.var_heuristic);
+		ValBranch vsal = stringToValBranch(so.val_heuristic);
+		branching->add(createBranch(va, vsel, vsal));
+		// branching->add(createBranch(va, ann2ivarsel(args->a[1]), ann2ivalsel(args->a[2])));
 		if (auto* s = dynamic_cast<AST::String*>(args->a[3])) {
 			if (s->s == "all") {
 				so.nof_solutions = 0;
@@ -511,28 +514,13 @@ void FlatZincSpace::parseSolveAnn(AST::Array* ann) {
 	}
 	// Check whether a search was specified
 	if (nbNonEmptySearchAnnotations == 0) {
-		if (so.adaptive_restart) {
-			vec<Branching*> va;
-			for (int i = 0; i < intVarCount; i++) {
-				if (!iv[i]->isFixed()) {
-					va.push(iv[i]);
-				}
-			}
-			if (va.size() > 0) {
-				// Use CLI-selected heuristics when available
-				VarBranch vsel = stringToVarBranch(so.var_heuristic);
-				ValBranch vsal = stringToValBranch(so.val_heuristic);
-				engine.branching->add(createBranch(va, vsel, vsal));
-				initAdaptiveRestart();
-			} else {
-				engine.branching->add(&sat);
-			}
-		} else if (so.vsids) {
-			engine.branching->add(&sat);
-		} else {
+		if (!so.vsids) {
 			so.vsids = true;
 			engine.branching->add(&sat);
 		}
+	}
+	if (so.adaptive_restart){
+		initAdaptiveRestart();
 	}
 }
 
