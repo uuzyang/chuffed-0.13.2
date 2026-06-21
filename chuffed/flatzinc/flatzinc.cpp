@@ -738,6 +738,10 @@ void FlatZincSpace::printElem(AST::Node* ai, std::ostream& out) const {
 
 void FlatZincSpace::storeSolution() {
 	solution_found = true;
+	if (adaptive_restart_enabled) {
+		resetAdaptiveRestart();
+		adaptive_skip_next_restart_update = true;
+	}
 	if (!enable_store_solution) {
 		return;
 	}
@@ -751,6 +755,7 @@ void FlatZincSpace::storeSolution() {
 	new_solution = true;
 }
 
+// ========================= Adaptive Restart Implementation =========================
 void FlatZincSpace::initAdaptiveRestart() {
 	adaptive_restart_enabled = true;
 	adaptive_probing = true;
@@ -758,11 +763,14 @@ void FlatZincSpace::initAdaptiveRestart() {
 	adaptive_best_subtrees.clear();
 	adaptive_bounds.clear();
 	adaptive_max_bound = -1;
-	adaptive_seed = so.adaptive_restart_seed;
+	adaptive_seed = so.adaptive_restart_seed_set ? so.adaptive_restart_seed : so.rnd_seed;
 	adaptive_top_k = so.adaptive_restart_top_k;
 	adaptive_probe_limit = so.adaptive_restart_probe_limit;
 	adaptive_bound_rate = so.adaptive_restart_bound_rate;
 	adaptive_subtree_roulette = so.adaptive_subtree_roulette;
+	adaptive_current_subtree = SubTree();
+	adaptive_revisit_subtree = SubTree();
+	adaptive_replay_pos = 0;
 	adaptive_rnd.seed(adaptive_seed);
 	generateAdaptiveBounds();
 	engine.adaptive_restart_enabled = true;
@@ -773,30 +781,11 @@ void FlatZincSpace::initAdaptiveRestart() {
 
 double FlatZincSpace::calculateAdaptiveScore(const vec<DecInfo>& path) const {
 	double posNum = 0;
-	double negNum = 0;
-	double negSum = 0;
 
 	for (int i = 0; i < path.size(); i++) {
 		const DecInfo& dec = path[i];
-		if (dec.var == nullptr) {
-			continue;
-		}
-		IntVar* var = static_cast<IntVar*>(dec.var);
-		bool hasNext = false;
-		if (dec.type == 1) {
-			int val = dec.val;
-			if (var->indomain(val)) {
-				int next = var->nextDomVal(val);
-				hasNext = (next <= var->getMax());
-			}
-		} else {
-			hasNext = true;
-		}
-		if (hasNext) {
+		if (dec.var != nullptr && dec.is_positive) {
 			posNum++;
-		} else {
-			negNum += 1;
-			negSum += posNum;
 		}
 	}
 	return posNum;
@@ -806,7 +795,7 @@ FlatZincSpace::SubTree FlatZincSpace::extractAdaptiveSubTree() const {
 	vec<DecInfo> decisions;
 	for (int i = 0; i < engine.dec_info.size(); i++) {
 		const DecInfo& dec = engine.dec_info[i];
-		if (dec.var == nullptr) {
+		if (dec.var == nullptr || !dec.is_positive) {
 			continue;
 		}
 		decisions.push(dec);
@@ -913,6 +902,7 @@ void FlatZincSpace::resetAdaptiveRestart() {
 	adaptive_revisit_index = -1;
 	adaptive_bounds.clear();
 	adaptive_max_bound = -1;
+	adaptive_replay_pos = 0;
 	adaptive_rnd.seed(adaptive_seed);
 	generateAdaptiveBounds();
 	engine.adaptive_current_probe_num = 0;
@@ -924,6 +914,31 @@ void FlatZincSpace::beforeRestart(Engine* /*e*/) {
 		return;
 	}
 	adaptive_current_subtree = extractAdaptiveSubTree();
+}
+
+static bool adaptiveDecisionFeasible(IntVar* var, const DecInfo& dec) {
+	switch (static_cast<LitRel>(dec.type)) {
+		case LR_NE:
+			return !var->isFixed() || var->getVal() != dec.val;
+		case LR_EQ:
+			return var->indomain(dec.val);
+		case LR_GE:
+			for (int v = std::max(dec.val + 1, var->getMin()); v <= var->getMax(); ++v) {
+				if (var->indomain(v)) {
+					return true;
+				}
+			}
+			return false;
+		case LR_LE:
+			for (int v = var->getMin(); v <= std::min(dec.val, var->getMax()); ++v) {
+				if (var->indomain(v)) {
+					return true;
+				}
+			}
+			return false;
+		default:
+			return false;
+	}
 }
 
 DecInfo* FlatZincSpace::nextAdaptiveReplayDecision() {
@@ -950,7 +965,7 @@ DecInfo* FlatZincSpace::nextAdaptiveReplayDecision() {
 		if (var->isFixed()) {
 			continue;
 		}
-		if (!var->indomain(dec.val)) {
+		if (!adaptiveDecisionFeasible(var, dec)) {
 			continue;
 		}
 
@@ -961,7 +976,7 @@ DecInfo* FlatZincSpace::nextAdaptiveReplayDecision() {
 }
 
 bool FlatZincSpace::onRestart(Engine* e) {
-	if (!enable_on_restart && !adaptive_restart_enabled) {
+	if (!enable_on_restart) {
 		return false;
 	}
 	if (mark_complete) {
@@ -1005,34 +1020,6 @@ bool FlatZincSpace::onRestart(Engine* e) {
 		}
 	}
 
-	if (adaptive_restart_enabled) {
-		double currentDPscore = adaptive_current_subtree.score;
-		if (adaptive_probing) {
-			double lastScore = -1;
-			if (adaptive_best_subtrees.size() > 0) {
-				lastScore = adaptive_best_subtrees.last().score;
-			}
-			if (currentDPscore > lastScore) {
-				insertAdaptiveSubTree(currentDPscore, false);
-			}
-			if (engine.adaptive_current_probe_num == 0) {
-				adaptive_probing = false;
-				adaptive_revisit_index = 0;
-				if (adaptive_best_subtrees.size() == adaptive_top_k) {
-					adaptive_revisit_index = recommendAdaptiveSubTree();
-				}
-				if (adaptive_revisit_index >= 0 && adaptive_revisit_index < adaptive_best_subtrees.size()) {
-					adaptive_revisit_subtree = adaptive_best_subtrees[adaptive_revisit_index];
-					removeAdaptiveSubTree(adaptive_revisit_index);
-				}
-			}
-		} else {
-			insertAdaptiveSubTree(currentDPscore, true);
-			adaptive_revisit_index = 0;
-			adaptive_probing = true;
-		}
-	}
-
 	// Set variables to last captured assignments
 	for (const auto& i : int_last_val) {
 		assume_int_val(iv[i[0]], i[1]);
@@ -1056,6 +1043,49 @@ bool FlatZincSpace::onRestart(Engine* e) {
 	}
 
 	new_solution = false;
+	return false;
+}
+
+bool FlatZincSpace::onAdaptiveRestart(Engine* /*e*/) {
+	if (!adaptive_restart_enabled) {
+		return false;
+	}
+	if (adaptive_skip_next_restart_update) {
+		adaptive_skip_next_restart_update = false;
+		return false;
+	}
+
+	double currentDPscore = adaptive_current_subtree.score;
+	if (adaptive_probing) {
+		double lastScore = -1;
+		if (adaptive_best_subtrees.size() > 0) {
+			lastScore = adaptive_best_subtrees.last().score;
+		}
+		if (currentDPscore > lastScore) {
+			insertAdaptiveSubTree(currentDPscore, false);
+		}
+		if (engine.adaptive_current_probe_num == 0) {
+			adaptive_probing = false;
+			adaptive_revisit_index = 0;
+			if (adaptive_best_subtrees.size() == adaptive_top_k) {
+				adaptive_revisit_index = recommendAdaptiveSubTree();
+			}
+			if (adaptive_revisit_index >= 0 && adaptive_revisit_index < adaptive_best_subtrees.size()) {
+				adaptive_revisit_subtree = adaptive_best_subtrees[adaptive_revisit_index];
+				adaptive_replay_pos = 0;
+				removeAdaptiveSubTree(adaptive_revisit_index);
+			} else {
+				adaptive_probing = true;
+			}
+		}
+	} else {
+		insertAdaptiveSubTree(currentDPscore, true);
+		adaptive_revisit_index = 0;
+		adaptive_revisit_subtree = SubTree();
+		adaptive_replay_pos = 0;
+		adaptive_probing = true;
+	}
+
 	return false;
 }
 

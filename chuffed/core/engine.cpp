@@ -262,6 +262,10 @@ inline void Engine::makeDecision(DecInfo& di, int alt) {
 	if (last_int) last_int->updateImpact(processImpact(var_sizes, getVarSizes(sizes)));
 #endif
 	if (di.var != nullptr) {
+		di.is_positive = (alt == 0);
+		if (dec_info.size() != 0) {
+			dec_info.last().is_positive = di.is_positive;
+		}
 #if DEBUG_VERBOSE
 		std::cerr << "makeDecision: " << intVarString[(IntVar*)di.var] << " / " << di.val << " (" << alt
 							<< ")" << std::endl;
@@ -328,6 +332,19 @@ void optimize(IntVar* v, int t) {
 	v->setPreferredVal(t == OPT_MIN ? PV_MIN : PV_MAX);
 }
 
+static bool notifyFlatZincRestart(FlatZinc::FlatZincSpace* fzn, Engine* e) {
+	if (fzn == nullptr) {
+		return false;
+	}
+	if (fzn->enable_on_restart && fzn->onRestart(e)) {
+		return true;
+	}
+	if (fzn->adaptive_restart_enabled && fzn->onAdaptiveRestart(e)) {
+		return true;
+	}
+	return false;
+}
+
 inline bool Engine::constrain() {
 	best_sol = opt_var->getVal();
 	opt_time = std::chrono::duration_cast<duration>(chuffed_clock::now() - start_time) - init_time;
@@ -339,7 +356,9 @@ inline bool Engine::constrain() {
 	auto* fzn = dynamic_cast<FlatZinc::FlatZincSpace*>(problem);
 	if (fzn != nullptr) {
 		fzn->storeSolution();
-		fzn->beforeRestart(this);
+		if (!fzn->adaptive_restart_enabled) {
+			fzn->beforeRestart(this);
+		}
 	}
 
 	sat.btToLevel(0);
@@ -379,11 +398,8 @@ inline bool Engine::constrain() {
 		}
 	}
 
-	if (fzn != nullptr) {
-		const bool done = fzn->onRestart(this);
-		if (done) {
-			return false;
-		}
+	if (notifyFlatZincRestart(fzn, this)) {
+		return false;
 	}
 
 	if (so.mip) {
@@ -540,8 +556,10 @@ unsigned int Engine::getRestartLimit(unsigned int i) {
 			return so.restart_scale;
 		}
 		engine.adaptive_current_probe_num = 0;
-		return so.restart_scale * ((int)pow(so.restart_base, engine.adaptive_geom_restarts));
+		const unsigned int cutoff =
+				so.restart_scale * static_cast<unsigned int>(pow(so.restart_base, engine.adaptive_geom_restarts));
 		engine.adaptive_geom_restarts++;
+		return cutoff;
 	}
 
 	switch (so.restart_type) {
@@ -895,11 +913,8 @@ RESULT Engine::search(const std::string& problemLabel) {
 					profilerConnector->restart(restart_count);
 				}
 #endif
-				if (fzn != nullptr) {
-					const bool done = fzn->onRestart(this);
-					if (done) {
-						return RES_GUN;
-					}
+				if (notifyFlatZincRestart(fzn, this)) {
+					return RES_GUN;
 				}
 
 				toggleVSIDS();
@@ -925,11 +940,8 @@ RESULT Engine::search(const std::string& problemLabel) {
 					profilerConnector->restart(restart_count);
 				}
 #endif
-				if (fzn != nullptr) {
-					const bool done = fzn->onRestart(this);
-					if (done) {
-						return RES_GUN;
-					}
+				if (notifyFlatZincRestart(fzn, this)) {
+					return RES_GUN;
 				}
 
 				sat.confl = nullptr;
@@ -958,7 +970,7 @@ RESULT Engine::search(const std::string& problemLabel) {
 					engine.dec_info.push(DecInfo(nullptr, p));
 					newDecisionLevel();
 				} else if (sat.value(toLit(p)) == l_False) {
-					if (fzn != nullptr && fzn->enable_on_restart) {
+					if (fzn != nullptr && (fzn->enable_on_restart || fzn->adaptive_restart_enabled)) {
 						if (!fzn->solution_found || decisionLevel() != 0) {
 							if (fzn != nullptr) {
 								fzn->beforeRestart(this);
@@ -967,8 +979,7 @@ RESULT Engine::search(const std::string& problemLabel) {
 							restart_count++;
 							nodepath.resize(0);
 							altpath.resize(0);
-							const bool done = fzn->onRestart(this);
-							if (done) {
+							if (notifyFlatZincRestart(fzn, this)) {
 								return RES_GUN;
 							}
 							continue;
@@ -1117,6 +1128,11 @@ void Engine::solve(Problem* p, const std::string& problemLabel) {
 		so.rnd_seed = r();
 	}
 	rnd = std::default_random_engine(so.rnd_seed);
+	auto* fzn = dynamic_cast<FlatZinc::FlatZincSpace*>(problem);
+	if (fzn != nullptr && fzn->adaptive_restart_enabled && !so.adaptive_restart_seed_set) {
+		fzn->adaptive_seed = so.rnd_seed;
+		fzn->adaptive_rnd.seed(fzn->adaptive_seed);
+	}
 
 	init();
 

@@ -67,6 +67,7 @@ public:
 	int adaptive_restart_probe_limit{3};  // Number of probing restarts before revisit
 	double adaptive_restart_bound_rate{1.5};  // Rate to grow revisit bounds
 	int adaptive_restart_seed{0};  // Random seed for adaptive restart selection
+	bool adaptive_restart_seed_set{false};  // Adaptive seed set explicitly from CLI
 	double adaptive_subtree_roulette{1.0}; // Roulette power for subtree selection (1.0 = proportional)
 #if PHASE_SAVING
 	int phase_saving{0};  // Repeat same variable polarity (0=no, 1=recent, 2=always)

@@ -52,7 +52,9 @@ public:
 	void* var;
 	int val;
 	int type;
-	DecInfo(void* _var, int _val, int _type = -1) : var(_var), val(_val), type(_type) {}
+	bool is_positive;
+	DecInfo(void* _var, int _val, int _type = -1, bool _is_positive = false)
+			: var(_var), val(_val), type(_type), is_positive(_is_positive) {}
 };
 
 class Branching {

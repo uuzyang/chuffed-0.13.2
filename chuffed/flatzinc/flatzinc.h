@@ -320,6 +320,7 @@ public:
 	bool solution_found = false;
 	// Whether a solution was found since the last restart
 	bool new_solution = false;
+	bool adaptive_skip_next_restart_update = false;
 
 	struct SubTree {
 		vec<DecInfo> decisions;
@@ -346,7 +347,7 @@ public:
 	vec<SubTree> adaptive_best_subtrees;
 	vec<int> adaptive_bounds;
 	int adaptive_max_bound = -1;
-	int adaptive_replay_pos;
+	int adaptive_replay_pos = 0;
 	DecInfo* nextAdaptiveReplayDecision();
 	// Definition for variables given uniformly random values on restart
 	// (lower bound, upper bound, variable index)
@@ -369,6 +370,8 @@ public:
 	// Method called before the search process is restarted
 	// Returns false when the search should be marked as complete
 	bool onRestart(Engine* e);
+	// Method called after a restart to update adaptive probing/revisit state
+	bool onAdaptiveRestart(Engine* e);
 	// Method called before the search process is restarted, but while the current decision path is still available
 	void beforeRestart(Engine* e);
 	// Whether onRestart() should be called

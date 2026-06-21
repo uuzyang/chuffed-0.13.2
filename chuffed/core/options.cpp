@@ -175,7 +175,7 @@ void printHelp(int& /*argc*/, char**& argv, const std::string& fileExt) {
 							 "     Time out in milliseconds (default "
 						<< def.time_out.count()
 						<< ", 0 = run indefinitely).\n"
-							 "  --rnd-seed <n>\n"
+							 "  --rnd-seed <n>, --seed <n>\n"
 							 "     Set random seed (default "
 						<< def.rnd_seed
 						<< "). If 0 then the current time\n"
@@ -488,7 +488,7 @@ void parseOptions(int& argc, char**& argv, std::string* fileArg, const std::stri
 			std::cerr << "WARNING: the --time-out flag has recently been changed."
 								<< "The time-out is now provided in milliseconds instead of seconds" << '\n';
 			so.time_out = duration(intBuffer);
-		} else if (cop.get("-r --rnd-seed", &intBuffer)) {
+		} else if (cop.get("-r --rnd-seed --seed", &intBuffer)) {
 			so.rnd_seed = intBuffer;
 		} else if (cop.getBool("-v --verbose", boolBuffer)) {
 			so.verbosity = static_cast<int>(boolBuffer);
@@ -545,6 +545,7 @@ void parseOptions(int& argc, char**& argv, std::string* fileArg, const std::stri
 			so.adaptive_restart_probe_limit = intBuffer;
 		} else if (cop.get("--adaptive-restart-seed", &intBuffer)) {
 			so.adaptive_restart_seed = intBuffer;
+			so.adaptive_restart_seed_set = true;
 		} else if (cop.get("--adaptive-restart-bound-rate", &stringBuffer)) {
 			so.adaptive_restart_bound_rate = stod(stringBuffer);
 		} else if (cop.get("--adaptive-roulette", &stringBuffer)) {
